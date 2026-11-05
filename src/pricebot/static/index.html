@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f7f2">
+  <meta name="description" content="Сравните найденные цены на WB, Ozon, AliExpress и Avito. Поиск товаров для Липецка без Telegram.">
+  <title>Ценник — сравните перед покупкой</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#search-query">Перейти к поиску</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Ценник — главная">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 6h11l11 11-10 10L5 15V6Z" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><circle cx="11" cy="12" r="2" fill="currentColor"/></svg></span>
+        <span>ценник<span class="brand-dot">.</span></span>
+      </a>
+      <nav class="header-nav" aria-label="Основная навигация"><a href="#how-it-works">Как это работает</a></nav>
+      <div class="location"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M15.5 8.3c0 4-5.5 8.2-5.5 8.2s-5.5-4.2-5.5-8.2a5.5 5.5 0 1 1 11 0Z" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="8" r="1.8" stroke="currentColor" stroke-width="1.6"/></svg><span id="header-city">Липецк</span><span class="location-divider"></span><span>₽</span></div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <div class="eyebrow"><span></span> МЕНЬШЕ ПОИСКОВ. БОЛЬШЕ ВЫБОРА.</div>
+          <h1 id="page-title">Одно название.<br><span>Четыре площадки.</span></h1>
+          <p class="hero-description">Найдите товар и сравните предложения —<br class="desktop-break"> от маркетплейсов до объявлений рядом.</p>
+        </div>
+        <aside class="hero-note" aria-label="О сравнении">
+          <svg class="note-arrow" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M10 13h25v25M35 13 10 38" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <p>Цена на тот же товар<br>может отличаться.<br><strong>Сравните перед покупкой.</strong></p>
+          <span class="note-caption">WB / OZON / ALIEXPRESS / AVITO</span>
+        </aside>
+      </section>
+
+      <section class="search-panel" aria-label="Поиск товара">
+        <form id="search-form" novalidate>
+          <label for="search-query" class="search-label">Что ищем?</label>
+          <div class="search-row">
+            <div class="input-wrap"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><input id="search-query" name="query" type="search" placeholder="Например, iPhone 15 128 GB" autocomplete="off" enterkeyhint="search" minlength="2" maxlength="160" required aria-describedby="search-hint form-error"></div>
+            <button id="search-submit" class="primary-button" type="submit"><span id="submit-label">Найти дешевле</span><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 10h13m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+          <p id="form-error" class="form-error" role="alert" hidden></p>
+          <div class="search-hints"><p id="search-hint">Точная модель поможет найти подходящие варианты.</p><p>В рублях <span aria-hidden="true">·</span> Без доставки</p></div>
+        </form>
+        <div class="suggestions" aria-label="Примеры запросов"><span>Попробуйте:</span><button type="button" data-query="iPhone 15 128 GB">iPhone 15 128 GB</button><button type="button" data-query="пылесос Xiaomi">пылесос Xiaomi</button><button type="button" data-query="LEGO">LEGO</button></div>
+      </section>
+
+      <div id="live-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+
+      <section class="marketplaces" aria-label="Статусы площадок">
+        <div class="section-kicker"><span>ИЩЕМ НА ПЛОЩАДКАХ</span><span id="check-time">Цены — на момент поиска</span></div>
+        <div id="source-list" class="source-grid"></div>
+      </section>
+
+      <section id="loading-state" class="loading-state" hidden aria-labelledby="loading-title"><span class="spinner" aria-hidden="true"></span><div><h2 id="loading-title">Сравниваем предложения</h2><p>Площадки отвечают с разной скоростью. Обычно это занимает до минуты.</p></div><button id="cancel-search" class="text-button" type="button">Отменить</button></section>
+
+      <section id="error-state" class="empty-state error-state" hidden aria-labelledby="error-title"><span class="state-symbol" aria-hidden="true">!</span><h2 id="error-title">Не удалось выполнить поиск</h2><p id="error-message"></p><button id="retry-search" class="secondary-button" type="button">Повторить поиск</button></section>
+
+      <section id="results-section" class="results-section" hidden aria-labelledby="results-title">
+        <div class="results-heading"><div><span class="eyebrow result-eyebrow">РЕЗУЛЬТАТЫ ПОИСКА</span><h2 id="results-title"></h2><p id="results-summary"></p></div><label class="sort-label" for="sort-order">Сортировка<select id="sort-order"><option value="asc">Сначала дешевле</option><option value="desc">Сначала дороже</option></select></label></div>
+        <div class="result-filters" id="result-filters" role="group" aria-label="Фильтр по площадке"></div>
+        <p id="partial-notice" class="partial-notice" hidden></p>
+        <div id="product-list" class="product-grid"></div>
+        <div id="empty-results" class="empty-state" hidden><span class="state-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="6" stroke="currentColor" stroke-width="1.6"/><path d="m15 15 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><h3 id="empty-title">Подходящих предложений пока нет</h3><p id="empty-message"></p></div>
+        <aside class="price-note"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9v4m0-7v.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><p>Сравниваем только найденные предложения с доступной страницы. Проверьте комплектацию, состояние, условия скидки и итоговую цену с доставкой. Регион WB, Ozon и AliExpress нужно подтвердить на сайте; на Avito встречаются новые и подержанные товары.</p></aside>
+      </section>
+
+      <section id="how-it-works" class="how-it-works" aria-labelledby="how-title"><div class="how-heading"><h2 id="how-title">Хорошая покупка —<br>это осознанный выбор.</h2><p>Помогаем сравнить. Решение за вами.</p></div><div class="steps"><article><span class="step-number">01</span><h3>Назовите товар</h3><p>Укажите модель, объём памяти или другие важные характеристики.</p></article><article><span class="step-number">02</span><h3>Сравните найденное</h3><p>Посмотрите цены и статусы площадок в одном месте.</p></article><article><span class="step-number">03</span><h3>Проверьте на сайте</h3><p>Откройте предложение и уточните наличие, доставку и продавца.</p></article></div></section>
+    </main>
+
+    <footer class="site-footer"><div class="footer-brand">ценник.</div><p>Цены меняются. Хорошая привычка сравнивать — остаётся.</p><span>Не магазин. Помощник в поиске.</span></footer>
+  </div>
+</body>
+</html>

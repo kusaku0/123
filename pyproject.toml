@@ -1,0 +1,33 @@
+[project]
+name = "lipetsk-pricebot"
+version = "0.2.0"
+description = "Web price comparison for Lipetsk with direct public marketplace search"
+requires-python = ">=3.11"
+dependencies = [
+  "python-telegram-bot>=22.5,<23",
+  "httpx>=0.28.1,<0.29",
+  "beautifulsoup4>=4.13,<5",
+  "playwright>=1.55,<2",
+  "python-dotenv>=1.1,<2",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4,<10", "pytest-asyncio>=1.2,<2"]
+
+[project.scripts]
+pricebot = "pricebot.__main__:main"
+priceweb = "pricebot.web:main"
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pricebot"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
