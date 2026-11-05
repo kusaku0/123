@@ -98,6 +98,9 @@ class SearchService:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
+    def invalidate(self, query: str):
+        self._cache.pop(normalize(query), None)
+
 
 async def resolve_wb_destination(client, latitude: float, longitude: float) -> str | None:
     """Only use a destination actually returned for the requested coordinates."""

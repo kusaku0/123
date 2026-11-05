@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlencode
 
 import httpx
 
 from pricebot.models import Product, SearchResult, SourceStatus
+from pricebot.transport import FetchError
 
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _SEARCH_BASE = "https://search.wb.ru/exactmatch/ru/common"
@@ -26,10 +28,14 @@ class WildberriesProvider:
         dest: str = "-1257786",
         api_version: str = "v18",
         region_label: str | None = None,
+        browser=None,
+        prefer_browser: bool = False,
     ) -> None:
         self.client = client
         self.dest = dest
         self.region_label = region_label
+        self.browser = browser
+        self.prefer_browser = prefer_browser
         if not api_version.startswith("v") or not api_version[1:].isdigit():
             raise ValueError("WB API version must look like v18")
         self.api_version = api_version
@@ -37,6 +43,8 @@ class WildberriesProvider:
     async def search(self, query: str, limit: int = 5) -> SearchResult:
         if not query.strip() or limit < 1:
             return SearchResult(self.source, [], SourceStatus.EMPTY)
+        if self.prefer_browser:
+            return await self._browser_search(query, limit)
         params = {
             "appType": "1",
             "curr": "rub",
@@ -60,11 +68,17 @@ class WildberriesProvider:
                     if response.status_code == 404 and index + 1 < len(versions):
                         continue
                     if response.status_code in (401, 403, 429, 498):
+                        message = {
+                            429: "Wildberries ограничил частоту запросов. Подождите перед повторным поиском.",
+                            401: "Поиск Wildberries отклонил запрос. Проверьте доступ к площадке в браузере.",
+                            498: "Поиск Wildberries отклонил запрос. Проверьте доступ к площадке в браузере.",
+                            403: "Wildberries запретил этот запрос. Откройте поиск на сайте для проверки доступа.",
+                        }[response.status_code]
                         return SearchResult(
                             self.source,
                             [],
                             SourceStatus.BLOCKED,
-                            "Wildberries ограничил доступ; повторите поиск позже.",
+                            message,
                         )
                     response.raise_for_status()
                     chunks = bytearray()
@@ -84,27 +98,7 @@ class WildberriesProvider:
                                 "Wildberries запросил проверку доступа.",
                             )
                         return self._error("Wildberries вернул неожиданный формат ответа.")
-                    products = _product_rows(data)
-                    if products is None:
-                        return self._error("Формат каталога Wildberries изменился.")
-                    found: dict[str, Product] = {}
-                    for row in products:
-                        item = _parse_product(row)
-                        if item is not None:
-                            previous = found.get(item.url)
-                            if previous is None or item.price < previous.price:
-                                found[item.url] = item
-                    items = sorted(found.values(), key=lambda item: item.price)[:limit]
-                    return SearchResult(
-                        self.source,
-                        items,
-                        SourceStatus.OK if items else SourceStatus.EMPTY,
-                        (
-                            f"Цена товара без доставки. Регион WB: {self.region_label}."
-                            if self.region_label
-                            else "Цена без доставки. Регион WB не подтверждён; проверьте цену для своего пункта выдачи."
-                        ),
-                    )
+                    return self._from_data(data, limit, region_verified=True)
         except httpx.TimeoutException:
             return SearchResult(
                 self.source, [], SourceStatus.TIMEOUT, "Wildberries не ответил вовремя."
@@ -112,6 +106,41 @@ class WildberriesProvider:
         except (httpx.HTTPError, OSError):
             return self._error("Не удалось получить каталог Wildberries.")
         return self._error("Каталог Wildberries недоступен.")
+
+    async def _browser_search(self, query: str, limit: int) -> SearchResult:
+        if self.browser is None:
+            return self._error("Браузер для поиска Wildberries ещё не запущен.")
+        url = "https://www.wildberries.ru/catalog/0/search.aspx?" + urlencode({"search": query, "sort": "priceup"})
+        try:
+            # Read only catalog responses actually emitted by this public page.
+            # No direct undocumented endpoint retries or session extraction.
+            data = await self.browser.fetch_wildberries(url)
+            return self._from_data(data, limit, region_verified=False)
+        except FetchError as error:
+            return SearchResult(self.source, [], error.status, error.message)
+        except (ValueError, TypeError, KeyError):
+            return self._error("Не удалось прочитать каталог на странице Wildberries.")
+
+    def _from_data(self, data: object, limit: int, *, region_verified: bool) -> SearchResult:
+        products = _product_rows(data)
+        if products is None:
+            return self._error("Формат каталога Wildberries изменился.")
+        found: dict[str, Product] = {}
+        for row in products:
+            item = _parse_product(row)
+            if item is not None:
+                previous = found.get(item.url)
+                if previous is None or item.price < previous.price:
+                    found[item.url] = item
+        items = sorted(found.values(), key=lambda item: item.price)[:limit]
+        if products and not items and not any(_has_price_schema(row) for row in products):
+            return self._error("Каталог Wildberries загрузился, но формат цен не распознан. Это не означает отсутствие товара.")
+        return SearchResult(
+            self.source, items, SourceStatus.OK if items else SourceStatus.EMPTY,
+            f"Цена товара без доставки. Регион WB: {self.region_label}."
+            if region_verified and self.region_label
+            else "Цена без доставки. Регион WB не подтверждён; проверьте цену для своего пункта выдачи.",
+        )
 
     def _error(self, message: str) -> SearchResult:
         return SearchResult(self.source, [], SourceStatus.ERROR, message)
@@ -126,6 +155,18 @@ def _product_rows(data: object) -> list | None:
     if isinstance(data.get("products"), list):
         return data["products"]
     return None
+
+
+def _has_price_schema(row: object) -> bool:
+    if not isinstance(row, dict):
+        return False
+    if "salePriceU" in row:
+        return True
+    sizes = row.get("sizes")
+    return isinstance(sizes, list) and any(
+        isinstance(size, dict) and isinstance(size.get("price"), dict)
+        and "product" in size["price"] for size in sizes
+    )
 
 
 def _in_stock(row: dict) -> bool:

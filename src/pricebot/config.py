@@ -26,6 +26,13 @@ def _count(name: str, default: str, maximum: int) -> int:
     return value
 
 
+def _boolean(name: str, default: str = "false") -> bool:
+    value = os.getenv(name, default).strip().lower()
+    if value not in {"true", "false", "1", "0"}:
+        raise ValueError(f"{name}: используйте true или false")
+    return value in {"true", "1"}
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str = field(default="", repr=False)
@@ -41,6 +48,8 @@ class Settings:
     user_cooldown: float = 10
     max_concurrent_searches: int = 2
     max_cache_entries: int = 128
+    local_browser_mode: bool = False
+    browser_profile_dir: str = ".pricebot/browser"
 
     @classmethod
     def from_env(cls, *, require_token: bool = True) -> "Settings":
@@ -72,4 +81,6 @@ class Settings:
             user_cooldown=_positive("USER_COOLDOWN", "10", 3600),
             max_concurrent_searches=_count("MAX_CONCURRENT_SEARCHES", "2", 10),
             max_cache_entries=_count("MAX_CACHE_ENTRIES", "128", 10000),
+            local_browser_mode=_boolean("LOCAL_BROWSER_MODE"),
+            browser_profile_dir=os.getenv("BROWSER_PROFILE_DIR", ".pricebot/browser"),
         )

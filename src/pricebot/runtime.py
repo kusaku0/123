@@ -16,14 +16,20 @@ class Runtime:
             limits=httpx.Limits(max_connections=8),
             headers={"Accept": "application/json", "User-Agent": "LipetskPriceSearch/0.2"},
         )
-        self.browser = BrowserTransport(settings.browser_executable, timeout=max(1, settings.source_timeout - 1))
+        self.browser = BrowserTransport(
+            settings.browser_executable, timeout=max(1, settings.source_timeout - 1),
+            local_mode=settings.local_browser_mode, profile_dir=settings.browser_profile_dir,
+        )
         self.service: SearchService | None = None
 
     async def start(self):
         destination = self.settings.wb_dest
-        if not destination:
+        if not destination and not self.settings.local_browser_mode:
             destination = await resolve_wb_destination(self.client, self.settings.wb_latitude, self.settings.wb_longitude)
-        wb = WildberriesProvider(self.client, dest=destination or "-1257786", region_label=self.settings.city if destination else None)
+        wb = WildberriesProvider(
+            self.client, dest=destination or "-1257786", region_label=self.settings.city if destination else None,
+            browser=self.browser, prefer_browser=self.settings.local_browser_mode,
+        )
         self.service = SearchService(
             [wb, *(PageProvider(source, self.browser, city=self.settings.avito_city) for source in ("ozon", "aliexpress", "avito"))],
             timeout=self.settings.source_timeout, ttl=self.settings.cache_ttl,

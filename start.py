@@ -23,6 +23,8 @@ def main():
     subprocess.run([str(python), "-m", "playwright", "install", "chromium"], check=True)
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(root / "src")
+    # A separate browser window/profile on this PC lets the user complete checks.
+    environment.setdefault("LOCAL_BROWSER_MODE", "true")
     process = subprocess.Popen([str(python), "-m", "pricebot.web"], env=environment)
     try:
         # This is a local readiness request only; remote requests keep host settings.

@@ -4,7 +4,7 @@ from urllib.parse import quote, urlsplit
 from pricebot.models import SearchResult, SourceStatus
 
 LABELS = {"wildberries": "WB", "ozon": "Ozon", "aliexpress": "AliExpress", "avito": "Avito"}
-STATUSES = {SourceStatus.OK: "найдены варианты", SourceStatus.EMPTY: "нет совпадений в полученной выдаче", SourceStatus.BLOCKED: "доступ ограничен / CAPTCHA", SourceStatus.TIMEOUT: "не ответил вовремя", SourceStatus.ERROR: "поиск недоступен"}
+STATUSES = {SourceStatus.OK: "найдены варианты", SourceStatus.EMPTY: "нет совпадений в полученной выдаче", SourceStatus.BLOCKED: "доступ ограничен", SourceStatus.TIMEOUT: "не ответил вовремя", SourceStatus.ERROR: "поиск недоступен"}
 
 
 def search_links(query: str, avito_city: str = "lipetsk") -> dict[str, str]:

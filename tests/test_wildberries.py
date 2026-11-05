@@ -1,10 +1,14 @@
 import unittest
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
 from pricebot.models import SourceStatus
 from pricebot.providers.wildberries import WildberriesProvider
+from pricebot.transport import FetchError
 
 
 class WildberriesTests(unittest.IsolatedAsyncioTestCase):
@@ -79,6 +83,81 @@ class WildberriesTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(status=status):
                 result = await self.request({}, status=status)
                 self.assertEqual(result.status, SourceStatus.BLOCKED)
+                self.assertNotIn("CAPTCHA", result.message)
+                if status == 429:
+                    self.assertIn("частоту", result.message)
+                elif status in (401, 498):
+                    self.assertIn("отклонил", result.message)
+                else:
+                    self.assertIn("запретил", result.message)
+
+    async def test_nonempty_unknown_price_schema_is_not_empty(self):
+        result = await self.request({"products": [{"id": 123, "name": "Phone", "newPrice": 500}]})
+        self.assertEqual(result.status, SourceStatus.ERROR)
+        self.assertIn("формат цен не распознан", result.message)
+
+    async def test_recognized_but_unavailable_price_is_empty(self):
+        result = await self.request({"products": [{
+            "id": 123, "name": "Phone", "totalQuantity": 0,
+            "sizes": [{"stocks": [], "price": {"product": 500}}],
+        }]})
+        self.assertEqual(result.status, SourceStatus.EMPTY)
+
+    async def test_browser_path_uses_public_search_and_no_direct_api(self):
+        def fail_direct(request):
+            self.fail("Browser mode must not call the separate direct API")
+
+        browser = SimpleNamespace(fetch_wildberries=AsyncMock(return_value={"products": [
+            {"id": 7, "name": "Phone B", "salePriceU": 4300},
+            {"id": 6, "name": "Phone A", "salePriceU": 3200},
+        ]}))
+        async with httpx.AsyncClient(transport=httpx.MockTransport(fail_direct)) as client:
+            result = await WildberriesProvider(client, browser=browser, prefer_browser=True).search("телефон & iphone", limit=1)
+        url = urlsplit(browser.fetch_wildberries.await_args.args[0])
+        self.assertEqual(url.hostname, "www.wildberries.ru")
+        self.assertEqual(url.path, "/catalog/0/search.aspx")
+        self.assertEqual(parse_qs(url.query), {"search": ["телефон & iphone"], "sort": ["priceup"]})
+        self.assertEqual(result.status, SourceStatus.OK)
+        self.assertEqual([p.price for p in result.items], [Decimal("32")])
+
+    async def test_browser_region_is_not_claimed_from_http_dest(self):
+        browser = SimpleNamespace(fetch_wildberries=AsyncMock(return_value={"data": {"products": [
+            {"id": 123, "name": "Phone", "salePriceU": 3200},
+        ]}}))
+        async with httpx.AsyncClient() as client:
+            result = await WildberriesProvider(client, dest="-123", region_label="Липецк",
+                                              browser=browser, prefer_browser=True).search("phone")
+        self.assertEqual(result.status, SourceStatus.OK)
+        self.assertIn("Регион WB не подтверждён", result.message)
+        self.assertNotIn("Регион WB: Липецк", result.message)
+
+    async def test_browser_status_failures_are_preserved(self):
+        for status in (SourceStatus.BLOCKED, SourceStatus.TIMEOUT, SourceStatus.ERROR):
+            with self.subTest(status=status):
+                browser = SimpleNamespace(fetch_wildberries=AsyncMock(side_effect=FetchError(status, "Проверка доступа.")))
+                async with httpx.AsyncClient() as client:
+                    result = await WildberriesProvider(client, browser=browser, prefer_browser=True).search("phone")
+                self.assertEqual(result.status, status)
+                self.assertEqual(result.items, [])
+                self.assertEqual(result.message, "Проверка доступа.")
+
+    async def test_browser_schema_empty_and_unknown_are_distinct(self):
+        for data, expected in (({"products": []}, SourceStatus.EMPTY),
+                               ({"not_products": []}, SourceStatus.ERROR),
+                               ({"products": [{"id": 1, "name": "Phone", "newPrice": 9}]}, SourceStatus.ERROR)):
+            with self.subTest(data=data):
+                browser = SimpleNamespace(fetch_wildberries=AsyncMock(return_value=data))
+                async with httpx.AsyncClient() as client:
+                    result = await WildberriesProvider(client, browser=browser, prefer_browser=True).search("phone")
+                self.assertEqual(result.status, expected)
+
+    async def test_browser_not_configured_returns_error_without_direct_fallback(self):
+        def fail_direct(request):
+            self.fail("Missing browser must not cause a direct API retry")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(fail_direct)) as client:
+            result = await WildberriesProvider(client, prefer_browser=True).search("phone")
+        self.assertEqual(result.status, SourceStatus.ERROR)
 
     async def test_captcha_html(self):
         async with httpx.AsyncClient(transport=httpx.MockTransport(

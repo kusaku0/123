@@ -8,7 +8,7 @@
     { id: "avito", name: "Avito", logo: "Av" },
   ];
   const sourceMap = new Map(SOURCES.map(source => [source.id, source]));
-  const statusLabels = { ok: "Предложения найдены", empty: "Нет совпадений в выдаче", blocked: "Доступ ограничен / CAPTCHA", timeout: "Не ответил вовремя", error: "Поиск недоступен", idle: "Готов к поиску", loading: "Ищем предложения…" };
+  const statusLabels = { ok: "Предложения найдены", empty: "Нет совпадений в выдаче", blocked: "Доступ ограничен", timeout: "Не ответил вовремя", error: "Поиск недоступен", idle: "Готов к поиску", loading: "Ищем предложения…" };
   const $ = id => document.getElementById(id);
   const form = $("search-form");
   const input = $("search-query");
@@ -19,6 +19,7 @@
   let lastQuery = "";
   let currentData = null;
   let activeSource = "all";
+  let refreshNext = false;
 
   function node(tag, className, text) {
     const element = document.createElement(tag);
@@ -68,6 +69,38 @@
     return node("span", "market-logo logo-" + source.id, source.logo);
   }
 
+  async function openStoreBrowser(source, button, message) {
+    button.disabled = true;
+    button.textContent = "Открываем окно…";
+    message.textContent = "Подождите, пока откроется окно магазина.";
+    message.dataset.state = "pending";
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 45000);
+    try {
+      const response = await fetch("/api/browser/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: source.id, query: lastQuery }),
+        signal: controller.signal,
+      });
+      let data;
+      try { data = await response.json(); } catch { throw new Error("Сервер вернул неожиданный ответ. Попробуйте открыть окно ещё раз."); }
+      if (!response.ok) throw new Error(data && typeof data.detail === "string" ? data.detail : "Не удалось открыть окно магазина. Попробуйте ещё раз.");
+      if (!data || data.status !== "opened") throw new Error("Не удалось подтвердить открытие окна. Попробуйте ещё раз.");
+      refreshNext = true;
+      message.dataset.state = "success";
+      message.textContent = "Окно магазина открыто на этом компьютере. После проверки нажмите «Найти дешевле» ещё раз.";
+      announce(`${source.name}: окно магазина открыто. После проверки повторите поиск.`);
+    } catch (error) {
+      message.dataset.state = "error";
+      message.textContent = controller.signal.aborted ? "Сервер не ответил вовремя. Проверьте, появилось ли окно магазина, или повторите попытку." : error instanceof TypeError ? "Нет соединения с сервером. Проверьте подключение и попробуйте ещё раз." : error.message || "Не удалось открыть окно магазина. Попробуйте ещё раз.";
+    } finally {
+      window.clearTimeout(timeout);
+      button.disabled = false;
+      button.textContent = "Открыть окно магазина";
+    }
+  }
+
   function renderSources(rows = [], state = "idle") {
     const bySource = new Map(rows.map(row => [row.source, row]));
     const container = $("source-list");
@@ -88,6 +121,21 @@
         const link = externalLink(url, "source-link", "Открыть поиск");
         link.append(externalArrow());
         card.append(link);
+      }
+      if (row && row.can_open_browser === true && ["blocked", "error", "timeout"].includes(status)) {
+        const controls = node("div", "source-browser-controls");
+        const button = node("button", "source-browser-button", "Открыть окно магазина");
+        button.type = "button";
+        button.dataset.openBrowser = source.id;
+        const message = node("p", "source-browser-message", "Пройдите проверку, если она появится, затем повторите поиск.");
+        message.id = "browser-message-" + source.id;
+        message.setAttribute("role", "status");
+        message.setAttribute("aria-live", "polite");
+        message.setAttribute("aria-atomic", "true");
+        button.setAttribute("aria-describedby", message.id);
+        button.addEventListener("click", () => openStoreBrowser(source, button, message));
+        controls.append(button, message);
+        card.append(controls);
       }
       container.append(card);
     }
@@ -216,7 +264,8 @@
     setBusy(true);
     announce("Поиск начался. Ждём ответы площадок.");
     try {
-      const response = await fetch("/api/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }), signal: controller.signal });
+      const payload = refreshNext ? { query, refresh: true } : { query };
+      const response = await fetch("/api/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: controller.signal });
       let data;
       try { data = await response.json(); } catch { throw new Error("Сервер вернул неожиданный ответ. Попробуйте позже."); }
       if (!response.ok) {
@@ -224,6 +273,7 @@
         throw new Error(typeof data.detail === "string" ? data.detail : fallback);
       }
       if (!data || !Array.isArray(data.products) || !Array.isArray(data.sources)) throw new Error("Не удалось прочитать результаты. Попробуйте позже.");
+      refreshNext = false;
       showResults(data);
     } catch (error) {
       renderSources();

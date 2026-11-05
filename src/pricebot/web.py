@@ -19,6 +19,7 @@ from pricebot.models import SourceStatus
 from pricebot.render import search_links
 from pricebot.runtime import Runtime
 from pricebot.search import normalize
+from pricebot.transport import FetchError
 
 logger = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
@@ -28,6 +29,7 @@ MARKETPLACE_HOSTS = {"wildberries": "wildberries.ru", "ozon": "ozon.ru", "avito"
 class SearchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=2, max_length=160)
+    refresh: bool = False
 
     @field_validator("query", mode="before")
     @classmethod
@@ -38,6 +40,10 @@ class SearchInput(BaseModel):
         if not any(c.isalnum() for c in value):
             raise ValueError("В названии должны быть буквы или цифры.")
         return value
+
+
+class BrowserInput(SearchInput):
+    source: str
 
 
 def safe_product_url(source: str, url: str) -> bool:
@@ -94,7 +100,31 @@ def create_app(settings: Settings | None = None, runtime=None) -> FastAPI:
     @app.get("/api/health")
     async def health():
         # This is application liveness, not a claim that marketplaces are reachable.
-        return {"status": "ok", "city": settings.city}
+        return {"status": "ok", "city": settings.city, "local_browser_mode": settings.local_browser_mode}
+
+    @app.post("/api/browser/open")
+    async def open_browser(payload: BrowserInput, request: Request):
+        # This launches a window on the server machine, so it is a local-PC feature.
+        if not settings.local_browser_mode:
+            raise HTTPException(403, "Окно магазина доступно только в локальном режиме на вашем компьютере.")
+        host = request.url.hostname
+        client = request.client.host if request.client else ""
+        origin = request.headers.get("origin")
+        expected_origin = f"{request.url.scheme}://{request.url.netloc}"
+        if (client not in {"127.0.0.1", "::1"} or host not in {"localhost", "127.0.0.1", "::1"}
+                or (origin is not None and origin != expected_origin)):
+            raise HTTPException(403, "Открывать окно магазина можно только с этого компьютера.")
+        links = search_links(payload.query, settings.avito_city)
+        if payload.source not in links:
+            raise HTTPException(422, "Неизвестная площадка.")
+        try:
+            await request.app.state.runtime.browser.open_for_review(links[payload.source])
+            return {"status": "opened", "message": "Окно магазина открыто на этом компьютере. После проверки нажмите «Найти дешевле» ещё раз."}
+        except FetchError as exc:
+            raise HTTPException(503, exc.message) from None
+        except Exception as exc:
+            logger.warning("Local browser window failed (%s)", type(exc).__name__)
+            raise HTTPException(503, "Не удалось открыть окно магазина. Проверьте запущенное окно программы.") from None
 
     @app.post("/api/search")
     async def search(payload: SearchInput, request: Request):
@@ -106,6 +136,8 @@ def create_app(settings: Settings | None = None, runtime=None) -> FastAPI:
             service = state.runtime.service
             if service is None:
                 raise HTTPException(503, "Поиск ещё запускается. Попробуйте немного позже.")
+            if payload.refresh:
+                service.invalidate(payload.query)
             results, cached = await service.search(payload.query)
             links = search_links(payload.query, settings.avito_city)
             products = sorted((p for r in results if r.status == SourceStatus.OK for p in r.items[:3]
@@ -123,6 +155,7 @@ def create_app(settings: Settings | None = None, runtime=None) -> FastAPI:
                 "products": [{"source": p.source, "title": p.title[:1000], "url": p.url,
                               "price": str(p.price), "currency": p.currency} for p in products],
                 "sources": [{"source": r.source, "status": r.status.value, "message": r.message,
+                             "can_open_browser": settings.local_browser_mode,
                              "count": sum(p.source == r.source for p in products), "search_url": links.get(r.source, "")}
                             for r in results],
             }

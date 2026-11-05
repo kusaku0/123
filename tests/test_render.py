@@ -44,7 +44,7 @@ class RenderTests(unittest.TestCase):
             SearchResult("avito", [], SourceStatus.ERROR),
         ])
         self.assertIn("999.00 ₽", rendered)
-        self.assertIn("Ozon: доступ ограничен / CAPTCHA", rendered)
+        self.assertIn("Ozon: доступ ограничен", rendered)
         self.assertIn("AliExpress: не ответил вовремя", rendered)
         self.assertIn("Avito: поиск недоступен", rendered)
         self.assertNotIn("Подтверждённых цен получить не удалось", rendered)
